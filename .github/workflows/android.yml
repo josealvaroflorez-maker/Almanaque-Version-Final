@@ -1,0 +1,68 @@
+name: Generar APK v16
+
+on:
+  workflow_dispatch:
+  push:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Descargar proyecto
+        uses: actions/checkout@v5
+
+      - name: Configurar Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Configurar Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Verificar estructura del proyecto
+        shell: bash
+        run: |
+          for file in settings.gradle build.gradle app/build.gradle app/src/main/AndroidManifest.xml; do
+            if [ ! -f "$file" ]; then
+              echo "Falta $file. Sube los tres paquetes en la raíz del repositorio."
+              exit 1
+            fi
+          done
+
+      - name: Preparar SDK de Android
+        shell: bash
+        run: |
+          task_sdk_root="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          task_sdkmanager="$task_sdk_root/cmdline-tools/latest/bin/sdkmanager"
+
+          if [ ! -x "$task_sdkmanager" ]; then
+            task_sdkmanager="$(find "$task_sdk_root/cmdline-tools" -type f -name sdkmanager | sort -V | tail -n 1)"
+          fi
+
+          if [ ! -x "$task_sdkmanager" ]; then
+            echo "No se encontró sdkmanager."
+            exit 1
+          fi
+
+          "$task_sdkmanager" --sdk_root="$task_sdk_root" \
+            'platforms;android-35' \
+            'build-tools;35.0.0'
+
+          echo "sdk.dir=$task_sdk_root" > local.properties
+
+      - name: Compilar APK
+        run: gradle --no-daemon :app:assembleDebug
+
+      - name: Publicar APK para descargar
+        uses: actions/upload-artifact@v4
+        with:
+          name: Calendario-Colombia-v16-APK
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
